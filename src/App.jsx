@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import Dashboard from "./components/Dashboard";
 import ImportModal from "./components/ImportModal";
+import PeriodFilter from "./components/PeriodFilter";
 import TransactionList from "./components/TransactionList";
 import {
 	addAccount as apiAddAccount,
@@ -15,6 +16,8 @@ import {
 	fetchEntries,
 } from "./services/api";
 import { parseDateValue } from "./utils/dateUtils";
+
+const CURRENT_YEAR = String(new Date().getFullYear());
 
 const App = () => {
 	// --- State Management ---
@@ -50,6 +53,56 @@ const App = () => {
 	const [showImportModal, setShowImportModal] = useState(false);
 	const [selectedIds, setSelectedIds] = useState([]);
 
+	// --- Period Filter ---
+	const [selectedYear, setSelectedYear] = useState(CURRENT_YEAR);
+	const [selectedMonth, setSelectedMonth] = useState("all");
+
+	const availableYears = useMemo(() => {
+		const years = new Set(
+			entries
+				.map((e) => e.date?.slice(0, 4))
+				.filter(Boolean),
+		);
+		return Array.from(years).sort((a, b) => b - a);
+	}, [entries]);
+
+	const filteredEntries = useMemo(() => {
+		if (selectedYear === "all") return entries;
+		return entries.filter((e) => {
+			if (!e.date) return false;
+			if (!e.date.startsWith(selectedYear)) return false;
+			if (selectedMonth !== "all" && e.date.slice(5, 7) !== selectedMonth)
+				return false;
+			return true;
+		});
+	}, [entries, selectedYear, selectedMonth]);
+
+	const periodLabel = useMemo(() => {
+		if (selectedYear === "all") return "All-Time";
+		if (selectedMonth === "all") return String(selectedYear);
+		const monthName = new Date(
+			`${selectedYear}-${selectedMonth}-01`,
+		).toLocaleString("default", { month: "long" });
+		return `${monthName} ${selectedYear}`;
+	}, [selectedYear, selectedMonth]);
+
+	const handleYearChange = (year) => {
+		setSelectedYear(year);
+		setSelectedMonth("all");
+		setSelectedIds([]);
+	};
+
+	const handleMonthChange = (month) => {
+		setSelectedMonth(month);
+		setSelectedIds([]);
+	};
+
+	const handleResetToCurrentYear = () => {
+		setSelectedYear(CURRENT_YEAR);
+		setSelectedMonth("all");
+		setSelectedIds([]);
+	};
+
 	// --- Data Fetching ---
 	useEffect(() => {
 		const fetchData = async () => {
@@ -70,9 +123,18 @@ const App = () => {
 		fetchData();
 	}, []);
 
-	// --- Calculations ---
+	const refreshEntries = async () => {
+		try {
+			const data = await fetchEntries();
+			setEntries(data);
+		} catch (error) {
+			console.error("Error refreshing entries:", error);
+		}
+	};
+
+	// --- Calculations (based on filtered entries) ---
 	const totals = useMemo(() => {
-		return entries.reduce(
+		return filteredEntries.reduce(
 			(acc, curr) => {
 				const amt = parseFloat(curr.amount) || 0;
 				if (curr.type === "INCOME") acc.income += amt;
@@ -82,7 +144,7 @@ const App = () => {
 			},
 			{ income: 0, expenses: 0, mortgages: 0 },
 		);
-	}, [entries]);
+	}, [filteredEntries]);
 
 	const netSavings = totals.income - totals.expenses - totals.mortgages;
 	const savingsRate =
@@ -142,10 +204,13 @@ const App = () => {
 	};
 
 	const toggleSelectAll = () => {
-		if (selectedIds.length === entries.length && entries.length > 0) {
+		if (
+			selectedIds.length === filteredEntries.length &&
+			filteredEntries.length > 0
+		) {
 			setSelectedIds([]);
 		} else {
-			setSelectedIds(entries.map((e) => e.id));
+			setSelectedIds(filteredEntries.map((e) => e.id));
 		}
 	};
 
@@ -328,60 +393,88 @@ const App = () => {
 		<div className="min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-sans p-4 md:p-8 transition-colors duration-200">
 			<div className="max-w-6xl mx-auto">
 				{/* Header */}
-				<header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-					<div>
-						<h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
-							<Wallet className="text-indigo-600 dark:text-indigo-400" />
-							Annual Savings Tracker
-						</h1>
-						<p className="text-slate-500 dark:text-slate-400">
-							Track your income, expenses, and mortgage with real database
-							persistence.
-						</p>
-					</div>
-					<div className="flex items-center gap-3">
-						<button
-							type="button"
-							onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-							className="p-2 rounded-full bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 shadow-sm border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-							aria-label="Toggle Theme"
-						>
-							{theme === "dark" ? <Sun size={20} /> : <Moon size={20} />}
-						</button>
-						<div className="flex bg-white dark:bg-slate-800 p-1 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
-							<button
-								type="button"
-								onClick={() => setActiveTab("dashboard")}
-								className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === "dashboard" ? "bg-indigo-600 text-white" : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"}`}
-							>
-								Dashboard
-							</button>
-							<button
-								type="button"
-								onClick={() => setActiveTab("entries")}
-								className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === "entries" ? "bg-indigo-600 text-white" : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"}`}
-							>
-								All Transactions
-							</button>
+				<header className="flex flex-col gap-4 mb-8">
+					<div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+						<div>
+							<h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+								<Wallet className="text-indigo-600 dark:text-indigo-400" />
+								Annual Savings Tracker
+							</h1>
+							<p className="text-slate-500 dark:text-slate-400">
+								Track your income, expenses, and mortgage with real database
+								persistence.
+							</p>
 						</div>
+						<div className="flex items-center gap-3">
+							<button
+								type="button"
+								onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+								className="p-2 rounded-full bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 shadow-sm border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+								aria-label="Toggle Theme"
+							>
+								{theme === "dark" ? <Sun size={20} /> : <Moon size={20} />}
+							</button>
+							<nav
+								aria-label="Main navigation"
+								className="flex bg-white dark:bg-slate-800 p-1 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700"
+							>
+								<button
+									type="button"
+									onClick={() => setActiveTab("dashboard")}
+									aria-current={activeTab === "dashboard" ? "page" : undefined}
+									className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === "dashboard" ? "bg-indigo-600 text-white" : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"}`}
+								>
+									Dashboard
+								</button>
+								<button
+									type="button"
+									onClick={() => setActiveTab("entries")}
+									aria-current={activeTab === "entries" ? "page" : undefined}
+									className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === "entries" ? "bg-indigo-600 text-white" : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"}`}
+								>
+									All Transactions
+								</button>
+							</nav>
+						</div>
+					</div>
+
+					{/* Period Filter */}
+					<div className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 shadow-sm">
+						<span className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide mr-1">
+							Showing:
+						</span>
+						<PeriodFilter
+							availableYears={availableYears}
+							selectedYear={selectedYear}
+							selectedMonth={selectedMonth}
+							onYearChange={handleYearChange}
+							onMonthChange={handleMonthChange}
+							onResetToCurrentYear={handleResetToCurrentYear}
+							currentYear={CURRENT_YEAR}
+						/>
+						<span className="ml-auto text-xs text-slate-400 dark:text-slate-500">
+							{filteredEntries.length} transaction{filteredEntries.length !== 1 ? "s" : ""}
+						</span>
 					</div>
 				</header>
 
 				{activeTab === "dashboard" ? (
 					<Dashboard
-						entries={entries}
+						entries={filteredEntries}
 						accounts={accounts}
 						totals={totals}
 						netSavings={netSavings}
 						savingsRate={savingsRate}
+						periodLabel={periodLabel}
 						formData={formData}
 						setFormData={setFormData}
 						handleAddEntry={handleAddEntry}
 						setActiveTab={setActiveTab}
+						onEntryUpdated={refreshEntries}
 					/>
 				) : (
 					<TransactionList
-						entries={entries}
+						entries={filteredEntries}
 						selectedIds={selectedIds}
 						toggleSelectAll={toggleSelectAll}
 						toggleSelect={toggleSelect}

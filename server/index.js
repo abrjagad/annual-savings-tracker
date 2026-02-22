@@ -63,6 +63,24 @@ app.post("/api/entries/bulk", (req, res) => {
 	});
 });
 
+// Update an entry's category
+app.patch("/api/entries/:id/category", (req, res) => {
+	const { category } = req.body;
+	if (!category) {
+		return res.status(400).json({ error: "Category is required" });
+	}
+	db.run(
+		"UPDATE entries SET category = ? WHERE id = ?",
+		[category, req.params.id],
+		function (err) {
+			if (err) return res.status(500).json({ error: err.message });
+			if (this.changes === 0)
+				return res.status(404).json({ error: "Entry not found" });
+			res.json({ id: Number(req.params.id), category });
+		},
+	);
+});
+
 // Delete an entry
 app.delete("/api/entries/:id", (req, res) => {
 	db.run("DELETE FROM entries WHERE id = ?", req.params.id, function (err) {
@@ -199,7 +217,7 @@ app.post("/api/entries/categorize", async (_req, res) => {
 					const ollama = createOllama();
 
 					const response = await generateObject({
-						model: ollama("gemma3:270m"), // Use llama3 as the default fallback
+						model: ollama("gemma3:270m"),
 						schema: z.object({
 							categorizations: z.array(
 								z.object({

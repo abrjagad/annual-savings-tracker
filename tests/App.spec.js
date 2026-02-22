@@ -44,3 +44,42 @@ test.describe("App Integration", () => {
 		await expect(page.getByText("-$150.75").first()).toBeVisible();
 	});
 });
+
+test.describe("Period Filter", () => {
+	test("year/month filter controls work correctly", async ({ page }) => {
+		await page.goto("/");
+
+		const currentYear = String(new Date().getFullYear());
+
+		// Year filter defaults to the current year
+		const yearSelect = page.locator("#year-filter");
+		await expect(yearSelect).toBeVisible();
+		await expect(yearSelect).toHaveValue(currentYear);
+
+		// Month filter is enabled when a year is selected
+		const monthSelect = page.locator("#month-filter");
+		await expect(monthSelect).toBeEnabled();
+		await expect(monthSelect).toHaveValue("all");
+
+		// Switching to "All Years" disables the month filter
+		await yearSelect.selectOption("all");
+		await expect(monthSelect).toBeDisabled();
+
+		// Switching back to current year re-enables month filter
+		await yearSelect.selectOption(currentYear);
+		await expect(monthSelect).toBeEnabled();
+
+		// Selecting a specific month works
+		await monthSelect.selectOption("01");
+		await expect(monthSelect).toHaveValue("01");
+
+		// "This Year" reset button appears and resets the month
+		const resetBtn = page.getByRole("button", { name: "This Year" });
+		await expect(resetBtn).toBeVisible();
+		await resetBtn.click();
+		await expect(monthSelect).toHaveValue("all");
+		await expect(yearSelect).toHaveValue(currentYear);
+		// Reset button should now be hidden (already at current year + all months)
+		await expect(resetBtn).not.toBeVisible();
+	});
+});

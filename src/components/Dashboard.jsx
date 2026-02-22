@@ -9,10 +9,12 @@ const Dashboard = ({
 	totals,
 	netSavings,
 	savingsRate,
+	periodLabel,
 	formData,
 	setFormData,
 	handleAddEntry,
 	setActiveTab,
+	onEntryUpdated,
 }) => {
 	return (
 		<div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -79,7 +81,7 @@ const Dashboard = ({
 				<div className="bg-gradient-to-br from-indigo-600 to-violet-700 p-8 rounded-3xl shadow-xl text-white relative overflow-hidden">
 					<div className="relative z-10">
 						<p className="text-indigo-100 font-medium mb-1">
-							Projected Annual Savings
+							{periodLabel} Savings
 						</p>
 						<h2 className="text-5xl font-black mb-4">
 							$
@@ -176,7 +178,7 @@ const Dashboard = ({
 					<p className="text-sm text-slate-500 dark:text-slate-400 mb-2">
 						Breakdown of your general expenses by category.
 					</p>
-					<ExpenseCategoryChart entries={entries} />
+					<ExpenseCategoryChart entries={entries} onEntryUpdated={onEntryUpdated} />
 				</div>
 
 				{/* Recent Entries */}

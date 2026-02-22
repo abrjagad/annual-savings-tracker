@@ -59,3 +59,13 @@ export const categorizeEntries = async () => {
 	});
 	return await res.json();
 };
+
+export const updateEntryCategory = async (id, category) => {
+	const res = await fetch(`${API_BASE}/entries/${id}/category`, {
+		method: "PATCH",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ category }),
+	});
+	if (!res.ok) throw new Error("Failed to update category");
+	return await res.json();
+};
