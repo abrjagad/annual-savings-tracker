@@ -21,5 +21,6 @@ export default defineConfig({
 		command: "yarn dev",
 		url: "http://localhost:5173",
 		reuseExistingServer: !process.env.CI,
+		env: { NODE_ENV: "test" },
 	},
 });

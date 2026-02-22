@@ -41,5 +41,6 @@ lerna-debug.log*
 
 # Project specific
 database.sqlite
+test-database.sqlite
 db.sqlite
 db.sqlite-journal

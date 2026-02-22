@@ -1,5 +1,6 @@
 import { Home, PieChart, TrendingDown, TrendingUp } from "lucide-react";
 import EntryForm from "./EntryForm";
+import ExpenseCategoryChart from "./ExpenseCategoryChart";
 import StatCard from "./StatCard";
 
 const Dashboard = ({
@@ -164,6 +165,18 @@ const Dashboard = ({
 							% of your total spending.
 						</p>
 					</div>
+				</div>
+
+				{/* Expense Categories */}
+				<div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm">
+					<h3 className="text-lg font-bold mb-1 flex items-center gap-2">
+						<PieChart size={18} className="text-indigo-600" />
+						Expense Categories
+					</h3>
+					<p className="text-sm text-slate-500 dark:text-slate-400 mb-2">
+						Breakdown of your general expenses by category.
+					</p>
+					<ExpenseCategoryChart entries={entries} />
 				</div>
 
 				{/* Recent Entries */}

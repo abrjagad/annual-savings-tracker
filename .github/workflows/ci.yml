@@ -10,10 +10,6 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
 
-    services:
-      # If the app needs a real DB for E2E tests, we might need to handle sqlite or mock it.
-      # Since it's SQLite, it will just create the file in the workspace.
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

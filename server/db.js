@@ -5,7 +5,9 @@ import sqlite3 from "sqlite3";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const dbPath = path.resolve(__dirname, "..", "database.sqlite");
+const dbFileName =
+	process.env.NODE_ENV === "test" ? "test-database.sqlite" : "database.sqlite";
+const dbPath = path.resolve(__dirname, "..", dbFileName);
 const db = new sqlite3.Database(dbPath);
 
 db.serialize(() => {
