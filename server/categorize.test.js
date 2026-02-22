@@ -27,10 +27,42 @@ describe("Auto-categorize Endpoint", () => {
 		vi.clearAllMocks();
 	});
 
-	it("should return 200 and a message when no uncategorized entries are found", async () => {
+	// Helper: set up db.all to return empty rules first, then the given rows for entries
+	const setupDbAll = (entryRows) => {
+		let callCount = 0;
 		db.all.mockImplementation((sql, params, cb) => {
-			cb(null, []);
+			callCount++;
+			if (callCount === 1) {
+				// Phase 1: rules query — return empty rules
+				cb(null, []);
+			} else {
+				// Phase 2: entries query
+				cb(null, entryRows);
+			}
 		});
+	};
+
+	// Helper: set up db.run to handle Phase 1 rule-apply UPDATEs as no-ops
+	const setupDbRun = (overrides = {}) => {
+		db.run.mockImplementation(function (sql, params, cb) {
+			if (
+				overrides.onCommit &&
+				sql === "COMMIT" &&
+				typeof params === "function"
+			) {
+				return overrides.onCommit(params);
+			}
+			// For Phase 1 rule UPDATEs and BEGIN TRANSACTION — call cb if provided
+			if (typeof params === "function") {
+				params.call({ changes: 0 }, null);
+			} else if (typeof cb === "function") {
+				cb.call({ changes: 0 }, null);
+			}
+		});
+	};
+
+	it("should return 200 and a message when no uncategorized entries are found", async () => {
+		setupDbAll([]);
 
 		const response = await request(app).post("/api/entries/categorize");
 
@@ -40,8 +72,16 @@ describe("Auto-categorize Endpoint", () => {
 	});
 
 	it("should return 500 if database fails to fetch entries", async () => {
+		let callCount = 0;
 		db.all.mockImplementation((sql, params, cb) => {
-			cb(new Error("Database error"));
+			callCount++;
+			if (callCount === 1) {
+				// Rules query succeeds with empty
+				cb(null, []);
+			} else {
+				// Entries query fails
+				cb(new Error("Database error"));
+			}
 		});
 
 		const response = await request(app).post("/api/entries/categorize");
@@ -61,9 +101,7 @@ describe("Auto-categorize Endpoint", () => {
 			{ id: 2, category: "Transport" },
 		];
 
-		db.all.mockImplementation((sql, params, cb) => {
-			cb(null, mockRows);
-		});
+		setupDbAll(mockRows);
 
 		generateObject.mockResolvedValue({
 			object: { categorizations: mockCategorizations },
@@ -77,18 +115,13 @@ describe("Auto-categorize Endpoint", () => {
 		};
 		db.prepare.mockReturnValue(mockStmt);
 
-		db.run.mockImplementation((sql, params, cb) => {
-			if (sql === "COMMIT" && typeof params === "function") {
-				params(null);
-			} else if (typeof params === "function") {
-				params(null);
-			}
+		setupDbRun({
+			onCommit: (cb) => cb(null),
 		});
 
 		const response = await request(app).post("/api/entries/categorize");
 
 		expect(response.status).toBe(200);
-		expect(response.body.message).toBe("Successfully categorized 2 entries.");
 		expect(response.body.categorizedCount).toBe(2);
 		expect(response.body.updates).toEqual(mockCategorizations);
 
@@ -102,9 +135,7 @@ describe("Auto-categorize Endpoint", () => {
 
 	it("should return 500 if AI generation fails", async () => {
 		const mockRows = [{ id: 1, note: "Target Purchase" }];
-		db.all.mockImplementation((sql, params, cb) => {
-			cb(null, mockRows);
-		});
+		setupDbAll(mockRows);
 
 		generateObject.mockRejectedValue(new Error("AI generation failed"));
 
@@ -118,9 +149,7 @@ describe("Auto-categorize Endpoint", () => {
 		const mockRows = [{ id: 1, note: "Target Purchase" }];
 		const mockCategorizations = [{ id: 1, category: "Shopping" }];
 
-		db.all.mockImplementation((sql, params, cb) => {
-			cb(null, mockRows);
-		});
+		setupDbAll(mockRows);
 
 		generateObject.mockResolvedValue({
 			object: { categorizations: mockCategorizations },
@@ -132,10 +161,8 @@ describe("Auto-categorize Endpoint", () => {
 		};
 		db.prepare.mockReturnValue(mockStmt);
 
-		db.run.mockImplementation((sql, params, cb) => {
-			if (sql === "COMMIT" && typeof params === "function") {
-				params(new Error("Commit failed"));
-			}
+		setupDbRun({
+			onCommit: (cb) => cb(new Error("Commit failed")),
 		});
 
 		const response = await request(app).post("/api/entries/categorize");

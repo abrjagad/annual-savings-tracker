@@ -28,6 +28,14 @@ db.serialize(() => {
         name TEXT UNIQUE NOT NULL
     )`);
 
+	// Category rules table — learned description→category mappings
+	db.run(`CREATE TABLE IF NOT EXISTS category_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pattern TEXT NOT NULL UNIQUE,
+        category TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+    )`);
+
 	// Initial accounts if none exist
 	db.get("SELECT count(*) as count FROM accounts", (_err, row) => {
 		if (row && row.count === 0) {

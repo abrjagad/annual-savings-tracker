@@ -64,20 +64,71 @@ app.post("/api/entries/bulk", (req, res) => {
 	});
 });
 
-// Update an entry's category
+// Update an entry's category — also learns a rule and applies to similar entries
 app.patch("/api/entries/:id/category", (req, res) => {
 	const { category } = req.body;
 	if (!category) {
 		return res.status(400).json({ error: "Category is required" });
 	}
+
+	const entryId = req.params.id;
+
+	// 1. Update the target entry
 	db.run(
 		"UPDATE entries SET category = ? WHERE id = ?",
-		[category, req.params.id],
-		function (err) {
-			if (err) return res.status(500).json({ error: err.message });
+		[category, entryId],
+		function (updateErr) {
+			if (updateErr) return res.status(500).json({ error: updateErr.message });
 			if (this.changes === 0)
 				return res.status(404).json({ error: "Entry not found" });
-			res.json({ id: Number(req.params.id), category });
+
+			// 2. Fetch the entry's note to create a rule
+			db.get(
+				"SELECT note FROM entries WHERE id = ?",
+				[entryId],
+				(fetchErr, row) => {
+					if (fetchErr || !row || !row.note || !row.note.trim()) {
+						// No note to learn from — just return the update
+						return res.json({
+							id: Number(entryId),
+							category,
+							rulesApplied: 0,
+						});
+					}
+
+					const pattern = row.note.trim().toLowerCase();
+
+					// 3. Upsert rule: pattern → category
+					db.run(
+						`INSERT INTO category_rules (pattern, category) VALUES (?, ?)
+						 ON CONFLICT(pattern) DO UPDATE SET category = excluded.category, created_at = datetime('now')`,
+						[pattern, category],
+						(ruleErr) => {
+							if (ruleErr) {
+								// Rule save failed — still return the entry update
+								return res.json({
+									id: Number(entryId),
+									category,
+									rulesApplied: 0,
+								});
+							}
+
+							// 4. Apply rule to all other matching uncategorized entries
+							db.run(
+								`UPDATE entries SET category = ? WHERE id != ? AND (category = 'Uncategorized' OR category IS NULL OR category = '') AND LOWER(note) LIKE ?`,
+								[category, entryId, `%${pattern}%`],
+								function (applyErr) {
+									res.json({
+										id: Number(entryId),
+										category,
+										rulesApplied: applyErr ? 0 : this.changes,
+									});
+								},
+							);
+						},
+					);
+				},
+			);
 		},
 	);
 });
@@ -123,11 +174,57 @@ app.post("/api/accounts", (req, res) => {
 	});
 });
 
-// Auto-categorize entries
+// Get all category rules
+app.get("/api/category-rules", (_req, res) => {
+	db.all(
+		"SELECT * FROM category_rules ORDER BY created_at DESC",
+		[],
+		(err, rows) => {
+			if (err) return res.status(500).json({ error: err.message });
+			res.json(rows);
+		},
+	);
+});
+
+// Delete a category rule
+app.delete("/api/category-rules/:id", (req, res) => {
+	db.run(
+		"DELETE FROM category_rules WHERE id = ?",
+		req.params.id,
+		function (err) {
+			if (err) return res.status(500).json({ error: err.message });
+			res.json({ deleted: this.changes });
+		},
+	);
+});
+
+// Auto-categorize entries (applies rules first, then AI for remainder)
 app.post("/api/entries/categorize", async (_req, res) => {
 	try {
-		// Fetch uncategorized entries mapping to a category like 'Uncategorized' or where empty.
-		// For now, we will assume 'Uncategorized' or '' or null
+		// --- Phase 1: Apply saved rules to uncategorized entries ---
+		const rules = await new Promise((resolve, reject) => {
+			db.all("SELECT * FROM category_rules", [], (err, rows) => {
+				if (err) reject(err);
+				else resolve(rows || []);
+			});
+		});
+
+		let ruleBasedCount = 0;
+		for (const rule of rules) {
+			const applied = await new Promise((resolve, reject) => {
+				db.run(
+					`UPDATE entries SET category = ? WHERE (category = 'Uncategorized' OR category IS NULL OR category = '') AND LOWER(note) LIKE ?`,
+					[rule.category, `%${rule.pattern}%`],
+					function (err) {
+						if (err) reject(err);
+						else resolve(this.changes);
+					},
+				);
+			});
+			ruleBasedCount += applied;
+		}
+
+		// --- Phase 2: Fetch remaining uncategorized entries for AI ---
 		const fetchSql = `SELECT id, note FROM entries WHERE category = 'Uncategorized' OR category IS NULL OR category = '' LIMIT 50`;
 
 		db.all(fetchSql, [], async (err, rows) => {
@@ -135,8 +232,12 @@ app.post("/api/entries/categorize", async (_req, res) => {
 
 			if (!rows || rows.length === 0) {
 				return res.json({
-					message: "No uncategorized entries found.",
-					categorizedCount: 0,
+					message:
+						ruleBasedCount > 0
+							? `Applied rules to ${ruleBasedCount} entries. No remaining uncategorized entries for AI.`
+							: "No uncategorized entries found.",
+					categorizedCount: ruleBasedCount,
+					ruleBasedCount,
 				});
 			}
 
@@ -221,8 +322,10 @@ app.post("/api/entries/categorize", async (_req, res) => {
 							return res.status(500).json({ error: commitErr.message });
 						}
 						res.json({
-							message: `Successfully categorized ${successCount} entries.`,
-							categorizedCount: successCount,
+							message: `Successfully categorized ${successCount + ruleBasedCount} entries (${ruleBasedCount} by rules, ${successCount} by AI).`,
+							categorizedCount: successCount + ruleBasedCount,
+							ruleBasedCount,
+							aiCount: successCount,
 							updates,
 						});
 					});
