@@ -1,6 +1,9 @@
+import { google } from "@ai-sdk/google";
+import { generateObject } from "ai";
 import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
+import { z } from "zod";
 import db from "./db.js";
 
 dotenv.config();
@@ -106,7 +109,7 @@ app.post("/api/entries/categorize", async (_req, res) => {
 	try {
 		// Fetch uncategorized entries mapping to a category like 'Uncategorized' or where empty.
 		// For now, we will assume 'Uncategorized' or '' or null
-		const fetchSql = `SELECT id, note FROM entries WHERE category = 'Uncategorized' OR category IS NULL OR category = '' LIMIT 5`;
+		const fetchSql = `SELECT id, note FROM entries WHERE category = 'Uncategorized' OR category IS NULL OR category = '' LIMIT 50`;
 
 		db.all(fetchSql, [], async (err, rows) => {
 			if (err) return res.status(500).json({ error: err.message });
@@ -118,97 +121,154 @@ app.post("/api/entries/categorize", async (_req, res) => {
 				});
 			}
 
-			// Create a payload for the AI
-			const _transactions = rows.map((r) => ({
-				id: r.id,
-				description: r.note || "",
-			}));
+			try {
+				// Create a payload for the AI
+				const transactions = rows.map((r) => ({
+					id: r.id,
+					description: r.note || "",
+				}));
 
-			// The categories based on your frontend constants.
-			const _validCategories = [
-				"Salary",
-				"Bonus",
-				"Investment",
-				"Gift",
-				"Other Income",
-				"Food",
-				"Transport",
-				"Utilities",
-				"Insurance",
-				"Entertainment",
-				"Shopping",
-				"Healthcare",
-				"Travel",
-				"Other Expense",
-				"Principal",
-				"Interest",
-				"Escrow/Taxes",
-				"Uncategorized",
-			];
+				// The categories based on your frontend constants.
+				const validCategories = [
+					"Salary",
+					"Bonus",
+					"Investment",
+					"Gift",
+					"Other Income",
+					"Food",
+					"Transport",
+					"Utilities",
+					"Insurance",
+					"Entertainment",
+					"Shopping",
+					"Healthcare",
+					"Travel",
+					"Other Expense",
+					"Principal",
+					"Interest",
+					"Escrow/Taxes",
+					"Uncategorized",
+				];
 
-			const { object } = await generateObject({
-				model: google("gemini-2.5-flash"), // Or your preferred model
-				schema: z.object({
-					categorizations: z.array(
-						z.object({
-							id: z.number(),
-							category: z.enum([
-								"Salary",
-								"Bonus",
-								"Investment",
-								"Gift",
-								"Other Income",
-								"Food",
-								"Transport",
-								"Utilities",
-								"Insurance",
-								"Entertainment",
-								"Shopping",
-								"Healthcare",
-								"Travel",
-								"Other Expense",
-								"Principal",
-								"Interest",
-								"Escrow/Taxes",
-								"Uncategorized",
-							]),
+				let object;
+				try {
+					const response = await generateObject({
+						model: google("gemini-2.5-flash"),
+						schema: z.object({
+							categorizations: z.array(
+								z.object({
+									id: z.number(),
+									category: z.enum([
+										"Salary",
+										"Bonus",
+										"Investment",
+										"Gift",
+										"Other Income",
+										"Food",
+										"Transport",
+										"Utilities",
+										"Insurance",
+										"Entertainment",
+										"Shopping",
+										"Healthcare",
+										"Travel",
+										"Other Expense",
+										"Principal",
+										"Interest",
+										"Escrow/Taxes",
+										"Uncategorized",
+									]),
+								}),
+							),
 						}),
-					),
-				}),
-				prompt: `You are an expert financial categorizer. Categorize the following bank transactions into the most appropriate category.
+						prompt: `You are an expert financial categorizer. Categorize the following bank transactions into the most appropriate category.
 			Valid Categories: ${validCategories.join(", ")}
 
 			Transactions to categorize:
 			${JSON.stringify(transactions, null, 2)}`,
-			});
+					});
+					object = response.object;
+				} catch (geminiError) {
+					console.warn(
+						"Gemini categorization failed (possibly quota exceeded), falling back to Ollama:",
+						geminiError.message,
+					);
 
-			const updates = object.categorizations;
+					// Dynamic import to avoid runtime errors if not strictly necessary initially
+					const { createOllama } = await import("ollama-ai-provider-v2");
+					const ollama = createOllama();
 
-			// Execute batch update
-			db.serialize(() => {
-				const stmt = db.prepare("UPDATE entries SET category = ? WHERE id = ?");
-				let successCount = 0;
+					const response = await generateObject({
+						model: ollama("gemma3:270m"), // Use llama3 as the default fallback
+						schema: z.object({
+							categorizations: z.array(
+								z.object({
+									id: z.number(),
+									category: z.enum([
+										"Salary",
+										"Bonus",
+										"Investment",
+										"Gift",
+										"Other Income",
+										"Food",
+										"Transport",
+										"Utilities",
+										"Insurance",
+										"Entertainment",
+										"Shopping",
+										"Healthcare",
+										"Travel",
+										"Other Expense",
+										"Principal",
+										"Interest",
+										"Escrow/Taxes",
+										"Uncategorized",
+									]),
+								}),
+							),
+						}),
+						prompt: `You are an expert financial categorizer. Categorize the following bank transactions into the most appropriate category.
+			Valid Categories: ${validCategories.join(", ")}
 
-				db.run("BEGIN TRANSACTION");
+			Transactions to categorize:
+			${JSON.stringify(transactions, null, 2)}`,
+					});
+					object = response.object;
+				}
 
-				updates.forEach((update) => {
-					stmt.run([update.category, update.id]);
-					successCount++;
-				});
+				const updates = object.categorizations;
 
-				stmt.finalize();
+				// Execute batch update
+				db.serialize(() => {
+					const stmt = db.prepare(
+						"UPDATE entries SET category = ? WHERE id = ?",
+					);
+					let successCount = 0;
 
-				db.run("COMMIT", (commitErr) => {
-					if (commitErr) {
-						return res.status(500).json({ error: commitErr.message });
-					}
-					res.json({
-						message: `Successfully categorized ${successCount} entries.`,
-						categorizedCount: successCount,
-						updates,
+					db.run("BEGIN TRANSACTION");
+
+					updates.forEach((update) => {
+						stmt.run([update.category, update.id]);
+						successCount++;
+					});
+
+					stmt.finalize();
+
+					db.run("COMMIT", (commitErr) => {
+						if (commitErr) {
+							return res.status(500).json({ error: commitErr.message });
+						}
+						res.json({
+							message: `Successfully categorized ${successCount} entries.`,
+							categorizedCount: successCount,
+							updates,
+						});
 					});
 				});
-			});
+			} catch (err) {
+				console.error("AI Categorization error:", err);
+				res.status(500).json({ error: err.message });
+			}
 		});
 	} catch (error) {
 		console.error("Categorization error:", error);
