@@ -1,0 +1,46 @@
+{
+	"name": "annual-savings-tracker",
+	"private": true,
+	"version": "1.0.0",
+	"type": "module",
+	"scripts": {
+		"server": "npx nodemon server/index.js",
+		"client": "vite",
+		"dev": "concurrently \"npx nodemon server\" \"npm run client\"",
+		"build": "vite build",
+		"preview": "vite preview",
+		"test": "vitest run --exclude tests",
+		"test:e2e": "npx playwright test",
+		"test:e2e:ui": "npx playwright test --ui",
+		"format": "biome format --write .",
+		"lint": "biome lint .",
+		"biome:check": "biome check --write ."
+	},
+	"dependencies": {
+		"@ai-sdk/google": "^3.0.30",
+		"ai": "^6.0.97",
+		"concurrently": "^9.2.1",
+		"cors": "^2.8.6",
+		"dotenv": "^17.3.1",
+		"express": "^5.2.1",
+		"lucide-react": "^0.344.0",
+		"react": "^18.2.0",
+		"react-dom": "^18.2.0",
+		"sqlite3": "^5.1.7",
+		"xlsx": "^0.18.5",
+		"zod": "^4.3.6"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.4",
+		"@playwright/test": "^1.58.2",
+		"@types/react": "^18.2.66",
+		"@types/react-dom": "^18.2.22",
+		"@vitejs/plugin-react": "^4.2.1",
+		"autoprefixer": "^10.4.18",
+		"postcss": "^8.4.35",
+		"supertest": "^7.2.2",
+		"tailwindcss": "^3.4.1",
+		"vite": "^5.1.4",
+		"vitest": "^4.0.18"
+	}
+}
