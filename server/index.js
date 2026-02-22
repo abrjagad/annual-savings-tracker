@@ -4,6 +4,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
 import { z } from "zod";
+import { ALL_CATEGORIES } from "../shared/categories.js";
 import db from "./db.js";
 
 dotenv.config();
@@ -146,27 +147,8 @@ app.post("/api/entries/categorize", async (_req, res) => {
 					description: r.note || "",
 				}));
 
-				// The categories based on your frontend constants.
-				const validCategories = [
-					"Salary",
-					"Bonus",
-					"Investment",
-					"Gift",
-					"Other Income",
-					"Food",
-					"Transport",
-					"Utilities",
-					"Insurance",
-					"Entertainment",
-					"Shopping",
-					"Healthcare",
-					"Travel",
-					"Other Expense",
-					"Principal",
-					"Interest",
-					"Escrow/Taxes",
-					"Uncategorized",
-				];
+				// Categories from shared module (single source of truth).
+				const validCategories = ALL_CATEGORIES;
 
 				let object;
 				try {
@@ -176,26 +158,7 @@ app.post("/api/entries/categorize", async (_req, res) => {
 							categorizations: z.array(
 								z.object({
 									id: z.number(),
-									category: z.enum([
-										"Salary",
-										"Bonus",
-										"Investment",
-										"Gift",
-										"Other Income",
-										"Food",
-										"Transport",
-										"Utilities",
-										"Insurance",
-										"Entertainment",
-										"Shopping",
-										"Healthcare",
-										"Travel",
-										"Other Expense",
-										"Principal",
-										"Interest",
-										"Escrow/Taxes",
-										"Uncategorized",
-									]),
+									category: z.enum(ALL_CATEGORIES),
 								}),
 							),
 						}),
@@ -222,26 +185,7 @@ app.post("/api/entries/categorize", async (_req, res) => {
 							categorizations: z.array(
 								z.object({
 									id: z.number(),
-									category: z.enum([
-										"Salary",
-										"Bonus",
-										"Investment",
-										"Gift",
-										"Other Income",
-										"Food",
-										"Transport",
-										"Utilities",
-										"Insurance",
-										"Entertainment",
-										"Shopping",
-										"Healthcare",
-										"Travel",
-										"Other Expense",
-										"Principal",
-										"Interest",
-										"Escrow/Taxes",
-										"Uncategorized",
-									]),
+									category: z.enum(ALL_CATEGORIES),
 								}),
 							),
 						}),
