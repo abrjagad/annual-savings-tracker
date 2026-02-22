@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      # If the app needs a real DB for E2E tests, we might need to handle sqlite or mock it.
+      # Since it's SQLite, it will just create the file in the workspace.
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Lint and Format check
+        run: npx @biomejs/biome ci .
+
+      - name: Run Unit Tests
+        run: yarn test
+
+      - name: Build project
+        run: yarn build
+
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps
+
+      - name: Run E2E Tests
+        run: yarn test:e2e
+        env:
+          # Add any env vars needed for tests
+          VITE_API_URL: http://localhost:5000 
+          # Note: E2E tests might need the server running. 
+          # Usually, Playwright webServer config handles this.
