@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Backend (Express)",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["nodemon", "server/index.js"],
+      "port": 3002
+    },
+    {
+      "name": "Frontend (Vite)",
+      "runtimeExecutable": "/Users/abe1/Coder/expenses/node_modules/.bin/vite",
+      "runtimeArgs": [],
+      "port": 5173
+    }
+  ]
+}

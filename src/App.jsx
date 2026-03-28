@@ -246,6 +246,7 @@ const App = () => {
 
 	// --- CSV Import ---
 	const [csvData, setCsvData] = useState(null);
+	const [duplicatePreview, setDuplicatePreview] = useState(null); // { duplicates, toInsert }
 	const [mapping, setMapping] = useState({
 		date: "",
 		amount: "",
@@ -349,10 +350,9 @@ const App = () => {
 		}
 	};
 
-	const handleImport = async () => {
-		if (!csvData || !mapping.date || !mapping.amount) return;
-
-		const processedEntries = csvData.map((row) => {
+	const buildProcessedEntries = () => {
+		if (!csvData || !mapping.date || !mapping.amount) return [];
+		return csvData.map((row) => {
 			const amountStr = String(row[mapping.amount] || "0").replace(
 				/[^0-9.-]+/g,
 				"",
@@ -370,15 +370,49 @@ const App = () => {
 				note: row[mapping.note] || "",
 			};
 		});
+	};
 
+	const handleImport = () => {
+		const processedEntries = buildProcessedEntries();
+		if (processedEntries.length === 0) return;
+
+		const existingKeys = new Set(
+			entries.map(
+				(e) =>
+					`${e.date}|${e.amount}|${e.account}|${(e.note || "").trim().toLowerCase()}`,
+			),
+		);
+
+		const seen = new Set();
+		const duplicates = [];
+		const toInsert = [];
+		for (const entry of processedEntries) {
+			const key = `${entry.date}|${entry.amount}|${entry.account}|${(entry.note || "").trim().toLowerCase()}`;
+			if (existingKeys.has(key) || seen.has(key)) {
+				duplicates.push(entry);
+			} else {
+				toInsert.push(entry);
+				seen.add(key);
+			}
+		}
+
+		if (duplicates.length > 0) {
+			setDuplicatePreview({ duplicates, toInsert });
+		} else {
+			doImport(toInsert);
+		}
+	};
+
+	const doImport = async (toInsert) => {
 		try {
-			await bulkAddEntries(processedEntries);
+			await bulkAddEntries(toInsert);
 			const data = await fetchEntries();
 			setEntries(data);
 			setShowImportModal(false);
 			setCsvData(null);
-		} catch (error) {
-			console.error("Error importing CSV:", error);
+			setDuplicatePreview(null);
+		} catch (err) {
+			console.error("Error importing CSV:", err);
 		}
 	};
 
@@ -499,6 +533,9 @@ const App = () => {
 					fileInputRef={fileInputRef}
 					handleFileChange={handleFileChange}
 					handleImport={handleImport}
+					duplicatePreview={duplicatePreview}
+					onConfirmImport={(selectedDups) => doImport([...duplicatePreview.toInsert, ...selectedDups])}
+					onCancelDuplicates={() => setDuplicatePreview(null)}
 				/>
 			)}
 		</div>
