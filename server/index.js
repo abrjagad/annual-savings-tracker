@@ -42,26 +42,71 @@ app.post("/api/entries", (req, res) => {
 // Bulk add entries
 app.post("/api/entries/bulk", (req, res) => {
 	const entries = req.body;
-	const stmt = db.prepare(
-		"INSERT INTO entries (type, category, amount, account, date, note) VALUES (?, ?, ?, ?, ?, ?)",
-	);
 
-	db.serialize(() => {
-		entries.forEach((entry) => {
-			stmt.run([
-				entry.type,
-				entry.category,
-				entry.amount,
-				entry.account,
-				entry.date,
-				entry.note,
-			]);
-		});
-		stmt.finalize((err) => {
+	// Load existing entries to detect duplicates
+	db.all(
+		"SELECT date, amount, account, note FROM entries",
+		[],
+		(err, existing) => {
 			if (err) return res.status(500).json({ error: err.message });
-			res.json({ message: `Successfully imported ${entries.length} entries` });
-		});
-	});
+
+			const existingKeys = new Set(
+				existing.map(
+					(e) =>
+						`${e.date}|${e.amount}|${e.account}|${(e.note || "").trim().toLowerCase()}`,
+				),
+			);
+
+			// Deduplicate incoming entries against DB and within the batch itself
+			const seen = new Set();
+			const toInsert = [];
+			for (const entry of entries) {
+				const key = `${entry.date}|${entry.amount}|${entry.account}|${(entry.note || "").trim().toLowerCase()}`;
+				if (!existingKeys.has(key) && !seen.has(key)) {
+					toInsert.push(entry);
+					seen.add(key);
+				}
+			}
+
+			const skipped = entries.length - toInsert.length;
+
+			if (toInsert.length === 0) {
+				return res.json({
+					message: `All ${entries.length} entries were duplicates and skipped.`,
+					inserted: 0,
+					skipped,
+				});
+			}
+
+			const stmt = db.prepare(
+				"INSERT INTO entries (type, category, amount, account, date, note) VALUES (?, ?, ?, ?, ?, ?)",
+			);
+
+			db.serialize(() => {
+				toInsert.forEach((entry) => {
+					stmt.run([
+						entry.type,
+						entry.category,
+						entry.amount,
+						entry.account,
+						entry.date,
+						entry.note,
+					]);
+				});
+				stmt.finalize((finalErr) => {
+					if (finalErr) return res.status(500).json({ error: finalErr.message });
+					res.json({
+						message:
+							skipped > 0
+								? `Successfully imported ${toInsert.length} entries, skipped ${skipped} duplicates.`
+								: `Successfully imported ${toInsert.length} entries.`,
+						inserted: toInsert.length,
+						skipped,
+					});
+				});
+			});
+		},
+	);
 });
 
 // Update an entry's category — also learns a rule and applies to similar entries
