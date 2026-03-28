@@ -6,6 +6,8 @@ import express from "express";
 import { z } from "zod";
 import { ALL_CATEGORIES } from "../shared/categories.js";
 import db from "./db.js";
+import { runAgent } from "./agent/runner.js";
+
 
 dotenv.config();
 const app = express();
@@ -337,6 +339,21 @@ app.post("/api/entries/categorize", async (_req, res) => {
 		});
 	} catch (error) {
 		console.error("Categorization error:", error);
+		res.status(500).json({ error: error.message });
+	}
+});
+
+// AI Agent Endpoint
+app.post("/api/agent", async (req, res) => {
+	const { prompt } = req.body;
+	if (!prompt) {
+		return res.status(400).json({ error: "Prompt is required" });
+	}
+
+	try {
+		const result = await runAgent(prompt);
+		res.json(result);
+	} catch (error) {
 		res.status(500).json({ error: error.message });
 	}
 });
